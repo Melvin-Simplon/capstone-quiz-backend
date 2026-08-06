@@ -1,0 +1,161 @@
+name: ci-cd
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Compile and test
+        run: ./mvnw -B -ntp verify
+
+      # Handed to the deploy job rather than rebuilt there: deploying an artifact
+      # other than the one that passed the tests would make the tests pointless.
+      - name: Keep the jar the tests ran against
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: target/*.jar
+          retention-days: 1
+          if-no-files-found: error
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scan the dependencies
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Scan for secrets
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          severity: MEDIUM,HIGH,CRITICAL
+          exit-code: "1"
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+
+      - uses: github/codeql-action/autobuild@v3
+
+      - uses: github/codeql-action/analyze@v3
+
+  deploy:
+    needs: [verify, security, codeql]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: nonprod
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+
+      # No client secret: the workflow proves which repository, branch and
+      # environment it runs from, and Azure hands back a token that dies with the
+      # job.
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Asked for by tag rather than written down here, so that renaming or
+      # rebuilding the infrastructure leaves this workflow untouched.
+      - name: Find the web app
+        id: target
+        run: |
+          read -r name group < <(az webapp list \
+            --query "[?tags.component=='backend' && tags.project=='simplon-quiz'].[name,resourceGroup] | [0]" \
+            -o tsv)
+
+          if [ -z "$name" ]; then
+            echo "No web app tagged component=backend, project=simplon-quiz." >&2
+            exit 1
+          fi
+
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "group=$group" >> "$GITHUB_OUTPUT"
+          echo "Deploying to $name in $group"
+
+      - name: Deploy the jar
+        run: |
+          jar=$(ls ./*.jar | head -1)
+          az webapp deploy \
+            --resource-group "${{ steps.target.outputs.group }}" \
+            --name "${{ steps.target.outputs.name }}" \
+            --src-path "$jar" \
+            --type jar
+
+      # A deployment that returns success while the application fails to start is
+      # the failure this catches. The window is generous because a cold start
+      # replays the Flyway migrations.
+      - name: Wait for the application to answer
+        run: |
+          url="https://$(az webapp show \
+            --resource-group "${{ steps.target.outputs.group }}" \
+            --name "${{ steps.target.outputs.name }}" \
+            --query defaultHostName -o tsv)/actuator/health"
+
+          for attempt in $(seq 1 30); do
+            body=$(curl -fsS --max-time 10 "$url" || true)
+            case "$body" in
+              *'"status":"UP"'*)
+                echo "$url answered UP after ${attempt} attempts"
+                exit 0
+                ;;
+            esac
+            sleep 10
+          done
+
+          echo "No healthy answer from $url after five minutes." >&2
+          az webapp log tail --resource-group "${{ steps.target.outputs.group }}" \
+            --name "${{ steps.target.outputs.name }}" --provider application &
+          sleep 20
+          exit 1
