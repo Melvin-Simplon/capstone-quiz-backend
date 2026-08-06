@@ -5,6 +5,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -19,10 +21,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * application-layer check on top.
  *
  * <p>The check is a no-op whenever {@code app.security.api-key} is blank, which is the default for
- * local development (see {@code application.yml}) — no extra setup needed to run the app locally.
- * In production, Azure App Service injects {@code BACKEND_API_KEY} from Key Vault (see
- * {@code app-service-java.tf} / {@code keyvault.tf} in the infra repo), and the frontend sends the
- * same value via an Angular HTTP interceptor.
+ * local development (see {@code application.yml}), so nothing extra is needed to run the app
+ * locally. In production, Azure App Service injects {@code BACKEND_API_KEY} from Key Vault (see
+ * {@code app-service.tf} and {@code keyvault.tf} in the infra repo), and the frontend sends the
+ * same value through an Angular HTTP interceptor.
  */
 @Component
 public class ApiKeyFilter extends OncePerRequestFilter {
@@ -46,10 +48,23 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         }
 
         String providedKey = request.getHeader(HEADER_NAME);
-        if (!expectedApiKey.equals(providedKey)) {
+        if (!matches(providedKey)) {
             response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or missing " + HEADER_NAME);
             return;
         }
         filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Compares in constant time. String.equals returns as soon as two bytes differ, which leaks how
+     * much of a guess was right through the time it took to reject it.
+     */
+    private boolean matches(String providedKey) {
+        if (providedKey == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                expectedApiKey.getBytes(StandardCharsets.UTF_8),
+                providedKey.getBytes(StandardCharsets.UTF_8));
     }
 }
