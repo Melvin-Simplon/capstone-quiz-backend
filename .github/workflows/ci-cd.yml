@@ -111,11 +111,14 @@ jobs:
       - name: Find the web app
         id: target
         run: |
-          read -r name group < <(az webapp list \
-            --query "[?tags.component=='backend' && tags.project=='simplon-quiz'].[name,resourceGroup] | [0]" \
-            -o tsv)
+          # One query per value: asking for a pair returns a JSON array, which tsv
+          # prints one element per line rather than as two columns, so reading it
+          # into two variables silently leaves the second one empty.
+          filter="[?tags.component=='backend' && tags.project=='simplon-quiz']"
+          name=$(az webapp list --query "${filter}.name | [0]" -o tsv)
+          group=$(az webapp list --query "${filter}.resourceGroup | [0]" -o tsv)
 
-          if [ -z "$name" ]; then
+          if [ -z "$name" ] || [ -z "$group" ]; then
             echo "No web app tagged component=backend, project=simplon-quiz." >&2
             exit 1
           fi
