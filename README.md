@@ -111,6 +111,12 @@ Everything under `/api/**` requires the `X-Api-Key` header when `BACKEND_API_KEY
 is in Azure. `/actuator/health` deliberately sits outside that filter, since App Service's health
 probe cannot send a header.
 
+`/api/**` is also rate limited per calling address, 120 requests a minute and 20 writes, answering
+`429` with a `Retry-After` beyond that. The application has no accounts and its key ships inside
+the frontend bundle, so this is what stands between a loop on session creation and a full database.
+Writes are capped harder because they are the ones that cost something: a row in PostgreSQL, and a
+blob per exported result. The limits are configurable under `app.rate-limit`.
+
 ## Configuration in Azure
 
 Terraform sets every one of these on the web app, three of them as Key Vault references, so none of

@@ -36,6 +36,13 @@ management:
         include: health
 
 app:
+  # Caps how many API calls one address may make per minute. The application has
+  # no accounts and its key ships inside the frontend bundle, so this is what
+  # stands between a loop on session creation and a full database.
+  rate-limit:
+    enabled: true
+    requests-per-minute: 120
+    writes-per-minute: 20
   cors:
     allowed-origins: http://localhost:4200
   security:
