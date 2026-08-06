@@ -1,0 +1,15 @@
+# Extends the default rules rather than replacing them: everything gitleaks
+# knows about stays on, and only the entry below is waived.
+[extend]
+useDefault = true
+
+[allowlist]
+description = """
+Azurite's well-known account key. Microsoft publishes it verbatim in its own
+documentation, it is identical on every machine that runs the emulator, and it
+opens nothing but a container on 127.0.0.1. Gitleaks is right that it looks
+like a key; it is not one.
+"""
+regexes = [
+  '''Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==''',
+]

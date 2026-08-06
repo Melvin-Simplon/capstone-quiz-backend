@@ -23,6 +23,10 @@ spring:
 management:
   endpoints:
     web:
+      # The index at /actuator lists which endpoints exist. Only health is
+      # exposed, so the list is short, but it is still a free map.
+      discovery:
+        enabled: false
       # Spring Boot's default is already "health" only, but explicit here since this is exactly
       # what Azure App Service pings (site_config.health_check_path, app-service-java.tf) and what
       # backs its auto-restart-on-failure behaviour, worth being able to see at a glance rather
@@ -91,6 +95,14 @@ spring:
       storage:
         blob:
           account-name: ${STORAGE_ACCOUNT_NAME}
+
+# Swagger lives outside /api/**, so ApiKeyFilter never covered it, and it served
+# the full contract to anyone who asked. Useful locally, a free map in Azure.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
 
 ---
 # Only active in aks (SPRING_PROFILES_ACTIVE=aks, aks-deploy.yml), separate
