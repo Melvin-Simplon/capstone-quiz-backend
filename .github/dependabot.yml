@@ -6,6 +6,16 @@ updates:
       interval: weekly
     target-branch: develop
     open-pull-requests-limit: 5
+    # Spring Boot 4 dropped RedisCacheManagerBuilderCustomizer from
+    # org.springframework.boot.autoconfigure.cache, so CacheConfig stops
+    # compiling: that is a migration, not a bump. springdoc follows the same
+    # major track and its 3.x line targets Boot 4, so holding one without the
+    # other only moves the break to startup, where nothing here would catch it.
+    ignore:
+      - dependency-name: org.springframework.boot:spring-boot-starter-parent
+        update-types: ['version-update:semver-major']
+      - dependency-name: org.springdoc:springdoc-openapi-starter-webmvc-ui
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: github-actions
     directory: /
