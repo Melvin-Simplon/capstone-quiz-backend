@@ -111,25 +111,3 @@ springdoc:
   swagger-ui:
     enabled: false
 
----
-# Only active in aks (SPRING_PROFILES_ACTIVE=aks, aks-deploy.yml), separate
-# from "prod" because App Service's SystemAssigned managed identity has no
-# equivalent inside an AKS pod here (Workload Identity was deliberately not
-# set up on the shared cluster, see terraform-shared-aks/main.tf) -- pods have
-# no Azure identity at all to resolve DefaultAzureCredential with, and trying
-# managed-identity-enabled here would hit the exact IMDS-timeout problem
-# already solved once for local dev (see the "prod" profile's own comment
-# above), except unrecoverably instead of just slow. Auth here goes through a
-# short-lived User Delegation SAS token instead, generated fresh by CI on
-# every deploy (aks-deploy.yml's "Generate storage SAS" step) since nothing
-# in the cluster can request one itself.
-spring:
-  config:
-    activate:
-      on-profile: aks
-  cloud:
-    azure:
-      storage:
-        blob:
-          endpoint: https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net
-          sas-token: ${STORAGE_SAS_TOKEN}
