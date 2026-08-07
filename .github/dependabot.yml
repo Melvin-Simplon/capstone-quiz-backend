@@ -16,6 +16,12 @@ updates:
         update-types: ['version-update:semver-major']
       - dependency-name: org.springdoc:springdoc-openapi-starter-webmvc-ui
         update-types: ['version-update:semver-major']
+      # 7.4.0 pulls Spring Boot 4 modules alongside the Boot 3 ones already
+      # here, and two JacksonAutoConfiguration classes cannot both register
+      # jsonComponentModule: the context refuses to start. A minor number, so
+      # the major rules above do not cover it, and it took the site down once.
+      - dependency-name: com.azure.spring:spring-cloud-azure-dependencies
+        versions: ['7.4.0']
 
   - package-ecosystem: github-actions
     directory: /
