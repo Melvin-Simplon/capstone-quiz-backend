@@ -40,7 +40,7 @@ COPY --from=build /app/target/azure-quiz-backend-*.jar app.jar
 EXPOSE 8080
 
 # SPRING_PROFILES_ACTIVE=prod is set via the Helm chart's env (values.yaml),
-# not hardcoded here -- same reasoning as app-service-java.tf: local/dev runs
+# not hardcoded here -- same reasoning as app-service.tf: local/dev runs
 # of this exact image (e.g. `docker run` without overriding it) would
 # otherwise silently pick up the "default" profile's Azurite/localhost-only
 # settings, which don't exist inside a container.

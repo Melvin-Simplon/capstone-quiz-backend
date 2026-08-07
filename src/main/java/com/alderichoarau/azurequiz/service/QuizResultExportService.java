@@ -13,8 +13,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
- * Simple, concrete use of the Storage Account (java-uploads container, see storage-java.tf /
- * app-service-java.tf in the infra repo): each finished quiz session's result gets exported as a
+ * Simple, concrete use of the Storage Account (java-uploads container, see storage.tf /
+ * app-service.tf in the infra repo): each finished quiz session's result gets exported as a
  * small JSON blob, downloadable later through {@link #download(UUID)}.
  */
 @Slf4j

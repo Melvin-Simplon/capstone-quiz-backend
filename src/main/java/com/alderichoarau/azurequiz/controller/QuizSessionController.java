@@ -50,7 +50,7 @@ public class QuizSessionController {
     }
 
     // Downloads the JSON blob written by QuizResultExportService when getResult() above was last
-    // called for this session (Storage Account, see storage-java.tf in the infra repo) -- streamed
+    // called for this session (Storage Account, see storage.tf in the infra repo) -- streamed
     // through the backend's own managed identity rather than a SAS, consistent with the account
     // having no access keys (shared_access_key_enabled = false).
     @GetMapping("/{sessionId}/result/export")
