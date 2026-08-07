@@ -130,9 +130,20 @@ jobs:
           filter="[?tags.component=='backend' && tags.project=='simplon-quiz']"
           name=$(az webapp list --query "${filter}.name | [0]" -o tsv)
           group=$(az webapp list --query "${filter}.resourceGroup | [0]" -o tsv)
+          state=$(az webapp list --query "${filter}.state | [0]" -o tsv)
 
           if [ -z "$name" ] || [ -z "$group" ]; then
             echo "No web app tagged component=backend, project=simplon-quiz." >&2
+            exit 1
+          fi
+
+          # Deploying to a stopped app looks like it works: the jar uploads, then
+          # the tracker waits for a site that will never start and the job dies
+          # sixteen minutes later on a timeout that names nothing. Terraform does
+          # not track this state either, so the plan stays clean while it happens.
+          if [ "$state" != "Running" ]; then
+            echo "$name is $state. Start it with:" >&2
+            echo "  az webapp start -n $name -g $group" >&2
             exit 1
           fi
 
