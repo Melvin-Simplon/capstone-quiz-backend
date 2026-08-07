@@ -13,7 +13,7 @@ spring:
     redis:
       # Locally: docker-compose's "redis" service, plaintext, no password.
       # In prod: REDIS_HOSTNAME/PORT/PASSWORD/SSL_ENABLED come from Terraform
-      # (Azure Managed Redis, see app-service-java.tf / redis.tf), TLS and a
+      # (Azure Managed Redis, see app-service.tf / redis.tf), TLS and a
       # key are mandatory there, both off by default here for local dev.
       host: ${REDIS_HOSTNAME:localhost}
       port: ${REDIS_PORT:6379}
@@ -28,7 +28,7 @@ management:
       discovery:
         enabled: false
       # Spring Boot's default is already "health" only, but explicit here since this is exactly
-      # what Azure App Service pings (site_config.health_check_path, app-service-java.tf) and what
+      # what Azure App Service pings (site_config.health_check_path, app-service.tf) and what
       # backs its auto-restart-on-failure behaviour, worth being able to see at a glance rather
       # than relying on the framework default. Not behind ApiKeyFilter (scoped to /api/** only,
       # ApiKeyFilter.java) since App Service's health prober can't send the API key header.
@@ -48,7 +48,7 @@ app:
   security:
     # Empty by default (local dev): the filter lets every request through.
     # In prod, Azure App Service injects BACKEND_API_KEY (from Key Vault via
-    # Terraform, see app-service-java.tf) and the filter starts enforcing it.
+    # Terraform, see app-service.tf) and the filter starts enforcing it.
     api-key: ${BACKEND_API_KEY:}
   storage:
     container-name: ${STORAGE_CONTAINER_NAME:quiz-results-local}
@@ -59,7 +59,7 @@ logging:
 
 ---
 # Spring's implicit "default" profile: active whenever no other profile is set. Locally that's
-# always the case; in prod, SPRING_PROFILES_ACTIVE=prod (app-service-java.tf) keeps this document
+# always the case; in prod, SPRING_PROFILES_ACTIVE=prod (app-service.tf) keeps this document
 # from loading there, so the two Azurite/localhost-only settings below never leak into prod.
 spring:
   config:
@@ -78,7 +78,7 @@ spring:
           connection-string: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
 
 ---
-# Only active in prod (SPRING_PROFILES_ACTIVE=prod, app-service-java.tf). Both settings below are
+# Only active in prod (SPRING_PROFILES_ACTIVE=prod, app-service.tf). Both settings below are
 # scoped here rather than declared unconditionally at the top with an empty local default -- an
 # *empty* account-name property is still a *present* property, and Spring Cloud Azure's storage
 # autoconfiguration picks account-name-based endpoint construction over connection-string as soon
@@ -97,7 +97,7 @@ spring:
     azure:
       credential:
         # This Web App's SystemAssigned identity, already granted Storage Blob Data Contributor
-        # scoped to STORAGE_CONTAINER_NAME (see storage-java.tf in the infra repo).
+        # scoped to STORAGE_CONTAINER_NAME (see storage.tf in the infra repo).
         managed-identity-enabled: true
       storage:
         blob:
@@ -111,25 +111,3 @@ springdoc:
   swagger-ui:
     enabled: false
 
----
-# Only active in aks (SPRING_PROFILES_ACTIVE=aks, aks-deploy.yml), separate
-# from "prod" because App Service's SystemAssigned managed identity has no
-# equivalent inside an AKS pod here (Workload Identity was deliberately not
-# set up on the shared cluster, see terraform-shared-aks/main.tf) -- pods have
-# no Azure identity at all to resolve DefaultAzureCredential with, and trying
-# managed-identity-enabled here would hit the exact IMDS-timeout problem
-# already solved once for local dev (see the "prod" profile's own comment
-# above), except unrecoverably instead of just slow. Auth here goes through a
-# short-lived User Delegation SAS token instead, generated fresh by CI on
-# every deploy (aks-deploy.yml's "Generate storage SAS" step) since nothing
-# in the cluster can request one itself.
-spring:
-  config:
-    activate:
-      on-profile: aks
-  cloud:
-    azure:
-      storage:
-        blob:
-          endpoint: https://${STORAGE_ACCOUNT_NAME}.blob.core.windows.net
-          sas-token: ${STORAGE_SAS_TOKEN}
