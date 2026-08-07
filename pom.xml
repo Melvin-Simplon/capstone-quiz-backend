@@ -23,7 +23,7 @@
 		     parent catches up. -->
 		<postgresql.version>42.7.12</postgresql.version>
 		<!-- AZURE -->
-		<spring-cloud-azure-dependencies.version>7.3.0</spring-cloud-azure-dependencies.version>
+		<spring-cloud-azure-dependencies.version>7.4.0</spring-cloud-azure-dependencies.version>
 		<azure-functions-maven-plugin.version>1.42.0</azure-functions-maven-plugin.version>
 	</properties>
 
