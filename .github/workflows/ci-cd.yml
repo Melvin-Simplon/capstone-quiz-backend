@@ -32,7 +32,7 @@ jobs:
       # other than the one that passed the tests would make the tests pointless.
       - name: Keep the jar the tests ran against
         if: github.event_name == 'push'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-jar
           path: target/*.jar
