@@ -36,6 +36,12 @@
 		     and a file indexed twice fails the analysis. -->
 		<sonar.sources>${project.basedir}</sonar.sources>
 		<sonar.exclusions>target/**,src/test/**</sonar.exclusions>
+		<!-- The Flyway seed migrations are data, not code: hundreds of INSERTs that
+		     are identical by nature. They accounted for 5384 of the 5408 duplicated
+		     lines, which read as a 66% duplication rate on a codebase whose Java
+		     duplicates 24. Excluded from the duplication detector only: every other
+		     rule still reads them. -->
+		<sonar.cpd.exclusions>src/main/resources/db/migration/**</sonar.cpd.exclusions>
 		<sonar.coverage.jacoco.xmlReportPaths>${project.basedir}/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
 	</properties>
 
