@@ -21,7 +21,12 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
+      # Full history: Sonar dates an issue from the commit that introduced it,
+      # and a shallow clone leaves it nothing to read, so everything lands in
+      # New Code and the quality gate judges the whole repository as new.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-java@v6
         with:
@@ -31,6 +36,16 @@ jobs:
 
       - name: Compile and test
         run: ./mvnw -B -ntp verify
+
+      # Same job as the tests, because coverage is a file on disk that nothing
+      # would carry to a second job. The plugin version is pinned: the usual
+      # sonar:sonar shorthand resolves to whatever is newest that day.
+      - name: Analyse with SonarCloud
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          ./mvnw -B -ntp
+          org.sonarsource.scanner.maven:sonar-maven-plugin:5.1.0.4751:sonar
 
       # Handed to the deploy job rather than rebuilt there: deploying an artifact
       # other than the one that passed the tests would make the tests pointless.
@@ -61,12 +76,12 @@ jobs:
         env:
           GITLEAKS_VERSION: 8.30.1
         run: |
-          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+          curl -sSfL --proto '=https' --proto-redir '=https' "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar -xz gitleaks
           ./gitleaks git . --no-banner --redact --config .gitleaks.toml
 
       - name: Scan the dependencies
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -74,7 +89,7 @@ jobs:
           exit-code: "1"
 
       - name: Scan for secrets
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -121,7 +136,7 @@ jobs:
       # environment it runs from, and Azure hands back a token that dies with the
       # job.
       - name: Sign in to Azure
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
