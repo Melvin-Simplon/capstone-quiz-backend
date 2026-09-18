@@ -18,6 +18,24 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Trivy below reads the dependencies that are already here. This reads what
+  # the pull request adds, which a scan of the current tree cannot tell apart.
+  review:
+    name: dependency-review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
   verify:
     runs-on: ubuntu-latest
     steps:
@@ -128,6 +146,8 @@ jobs:
 
   deploy:
     needs: [verify, security, codeql]
+    outputs:
+      url: ${{ steps.health.outputs.url }}
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: nonprod
@@ -194,25 +214,46 @@ jobs:
       # the failure this catches. The window is generous because a cold start
       # replays the Flyway migrations.
       - name: Wait for the application to answer
+        id: health
         run: |
           url="https://$(az webapp show \
             --resource-group "${{ steps.target.outputs.group }}" \
             --name "${{ steps.target.outputs.name }}" \
-            --query defaultHostName -o tsv)/actuator/health"
+            --query defaultHostName -o tsv)"
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          health="${url}/actuator/health"
 
           for attempt in $(seq 1 30); do
-            body=$(curl -fsS --max-time 10 "$url" || true)
+            body=$(curl -fsS --max-time 10 "$health" || true)
             case "$body" in
               *'"status":"UP"'*)
-                echo "$url answered UP after ${attempt} attempts"
+                echo "$health answered UP after ${attempt} attempts"
                 exit 0
                 ;;
             esac
             sleep 10
           done
 
-          echo "No healthy answer from $url after five minutes." >&2
+          echo "No healthy answer from $health after five minutes." >&2
           az webapp log tail --resource-group "${{ steps.target.outputs.group }}" \
             --name "${{ steps.target.outputs.name }}" --provider application &
           sleep 20
           exit 1
+
+  # The API as it runs, from outside. A backend has no page to render, so what
+  # this reads is the response headers and what the error pages give away.
+  dast:
+    name: OWASP ZAP
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Scan the running API
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ needs.deploy.outputs.url }}
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: zap-baseline-report
