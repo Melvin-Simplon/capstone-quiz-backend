@@ -25,6 +25,18 @@
 		<!-- AZURE -->
 		<spring-cloud-azure-dependencies.version>7.3.0</spring-cloud-azure-dependencies.version>
 		<azure-functions-maven-plugin.version>1.42.0</azure-functions-maven-plugin.version>
+		<!-- SONARCLOUD -->
+		<sonar.projectKey>Melvin-Simplon_capstone-quiz-backend</sonar.projectKey>
+		<sonar.organization>melvin-at-simplon-co-quiz-bilan-01</sonar.organization>
+		<sonar.host.url>https://sonarcloud.io</sonar.host.url>
+		<!-- The whole repository rather than src/main/java: the workflows and the
+		     compose file are worth the same scrutiny as the application. Maven still
+		     hands the scanner the compiled classes, so Java analysis is unaffected.
+		     src/test is excluded here because Maven already declares it as tests,
+		     and a file indexed twice fails the analysis. -->
+		<sonar.sources>${project.basedir}</sonar.sources>
+		<sonar.exclusions>target/**,src/test/**</sonar.exclusions>
+		<sonar.coverage.jacoco.xmlReportPaths>${project.basedir}/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
 	</properties>
 
 	<dependencies>
@@ -137,6 +149,29 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<!-- Records which lines the tests actually reached. Sonar reads the XML
+			     report; without this plugin it reports zero coverage rather than no
+			     coverage, which reads the same on the dashboard and is not. Version
+			     comes from the Spring Boot parent. -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>
