@@ -138,9 +138,6 @@ jobs:
 
   # The API as it runs, from outside. A backend has no page to render, so what
   # this reads is the response headers and what the error pages give away.
-
-  # The API as it runs, from outside. A backend has no page to render, so what
-  # this reads is the response headers and what the error pages give away.
   dast:
     name: OWASP ZAP
     needs: deploy
