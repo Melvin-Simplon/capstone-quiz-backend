@@ -16,6 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Trivy reads the dependency manifests from the working tree. Without a
+      # checkout it scans an empty runner, finds nothing, and reports success:
+      # the check stays green while guarding nothing.
+      - uses: actions/checkout@v7
+
       - name: Scan the dependencies
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

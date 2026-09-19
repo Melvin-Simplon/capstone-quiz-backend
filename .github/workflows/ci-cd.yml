@@ -44,6 +44,11 @@ jobs:
     needs: [quality, secrets, sca, sast]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # Without this the job inherits the six hour default. The health check below
+    # already gives up after five minutes, so anything past thirty is a runner
+    # that will not come back, and it holds the ci-cd concurrency group for the
+    # ref while it waits.
+    timeout-minutes: 30
     environment: nonprod
     outputs:
       url: ${{ steps.health.outputs.url }}
