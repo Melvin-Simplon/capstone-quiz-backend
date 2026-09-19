@@ -40,9 +40,47 @@ jobs:
       security-events: write
     uses: ./.github/workflows/ci-sast.yml
 
-  deploy:
+  # Whether there is anything to deploy to, asked before the deployment rather
+  # than inside it. The environment is built and torn down between sessions, so
+  # an absent one is a normal state: there is nothing to deploy, which is not a
+  # deployment that failed. Kept in its own job so that answering no leaves
+  # deploy skipped rather than red, and so the reviewer below is only ever asked
+  # about a deployment that can actually happen.
+  #
+  # No environment: here on purpose. nonprod carries the approval gate, and the
+  # Azure variables are repository level, so this job reads them without it. The
+  # federated credential for refs/heads/main covers the sign in.
+  target:
     needs: [quality, secrets, sca, sast]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      found: ${{ steps.look.outputs.found }}
+      name: ${{ steps.look.outputs.name }}
+      group: ${{ steps.look.outputs.group }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sign in to Azure
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Find the web app
+        id: look
+        run: scripts/workflows/deploy/find-the-web-app.sh
+
+  deploy:
+    needs: target
+    # Skipped, not failed, when the environment is not built. target is skipped
+    # on a pull request too, which leaves this output empty and skips this job.
+    if: needs.target.outputs.found == 'true'
     runs-on: ubuntu-latest
     # Without this the job inherits the six hour default. The health check below
     # already gives up after five minutes, so anything past thirty is a runner
@@ -70,44 +108,12 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      # Asked for by tag rather than written down here, so that renaming or
-      # rebuilding the infrastructure leaves this workflow untouched.
-      - name: Find the web app
-        id: target
-        run: |
-          # One query per value: asking for a pair returns a JSON array, which tsv
-          # prints one element per line rather than as two columns, so reading it
-          # into two variables silently leaves the second one empty.
-          filter="[?tags.component=='backend' && tags.project=='simplon-quiz']"
-          name=$(az webapp list --query "${filter}.name | [0]" -o tsv)
-          group=$(az webapp list --query "${filter}.resourceGroup | [0]" -o tsv)
-          state=$(az webapp list --query "${filter}.state | [0]" -o tsv)
-
-          if [ -z "$name" ] || [ -z "$group" ]; then
-            echo "No web app tagged component=backend, project=simplon-quiz." >&2
-            exit 1
-          fi
-
-          # Deploying to a stopped app looks like it works: the jar uploads, then
-          # the tracker waits for a site that will never start and the job dies
-          # sixteen minutes later on a timeout that names nothing. Terraform does
-          # not track this state either, so the plan stays clean while it happens.
-          if [ "$state" != "Running" ]; then
-            echo "$name is $state. Start it with:" >&2
-            echo "  az webapp start -n $name -g $group" >&2
-            exit 1
-          fi
-
-          echo "name=$name" >> "$GITHUB_OUTPUT"
-          echo "group=$group" >> "$GITHUB_OUTPUT"
-          echo "Deploying to $name in $group"
-
       - name: Deploy the jar
         run: |
           jar=$(ls ./*.jar | head -1)
           az webapp deploy \
-            --resource-group "${{ steps.target.outputs.group }}" \
-            --name "${{ steps.target.outputs.name }}" \
+            --resource-group "${{ needs.target.outputs.group }}" \
+            --name "${{ needs.target.outputs.name }}" \
             --src-path "$jar" \
             --type jar
 
@@ -118,8 +124,8 @@ jobs:
         id: health
         run: |
           url="https://$(az webapp show \
-            --resource-group "${{ steps.target.outputs.group }}" \
-            --name "${{ steps.target.outputs.name }}" \
+            --resource-group "${{ needs.target.outputs.group }}" \
+            --name "${{ needs.target.outputs.name }}" \
             --query defaultHostName -o tsv)"
           echo "url=${url}" >> "$GITHUB_OUTPUT"
           health="${url}/actuator/health"
@@ -136,8 +142,8 @@ jobs:
           done
 
           echo "No healthy answer from $health after five minutes." >&2
-          az webapp log tail --resource-group "${{ steps.target.outputs.group }}" \
-            --name "${{ steps.target.outputs.name }}" --provider application &
+          az webapp log tail --resource-group "${{ needs.target.outputs.group }}" \
+            --name "${{ needs.target.outputs.name }}" --provider application &
           sleep 20
           exit 1
 
