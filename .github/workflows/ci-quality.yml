@@ -1,0 +1,75 @@
+# Compile, test, and analyse with SonarCloud.
+#
+# Called from ci-cd.yml. The tests run here rather than in a job of their own:
+# coverage is a file on disk, and nothing carries it between two jobs.
+name: Quality
+
+on:
+  workflow_call:
+    secrets:
+      SONAR_TOKEN:
+        required: true
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Maven and SonarCloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Full history: Sonar dates an issue from the commit that introduced it,
+      # and a shallow clone leaves it nothing to read, so everything lands in
+      # New Code and the quality gate judges the whole repository as new.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Compile and test
+        run: ./mvnw -B -ntp verify
+
+      # Same job as the tests, because coverage is a file on disk that nothing
+      # would carry to a second job. The plugin version is pinned: the usual
+      # sonar:sonar shorthand resolves to whatever is newest that day.
+      #
+      # Skipped on Dependabot runs: GitHub hands those a separate, empty secret
+      # store, so SONAR_TOKEN arrives blank and the scanner stops on "Not
+      # authorized", failing a required check on a branch that only bumps a
+      # dependency. The tests above still run, and the code is scanned for real
+      # once the branch lands on develop or main.
+      - name: Analyse with SonarCloud
+        if: github.actor != 'dependabot[bot]'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: >
+          ./mvnw -B -ntp
+          org.sonarsource.scanner.maven:sonar-maven-plugin:5.1.0.4751:sonar
+
+      - name: Put the tests and the coverage on the summary page
+        if: always()
+        env:
+          PULL_REQUEST: ${{ github.event.number }}
+        run: scripts/workflows/ci/summarise-the-quality-report.sh
+
+      # Handed to the deploy job rather than rebuilt there: deploying an artifact
+      # other than the one that passed the tests would make the tests pointless.
+      #
+      # This guard has to allow exactly what the deploy job allows. Leave the
+      # manual run out of it and the deploy job downloads an artifact that was
+      # never uploaded, which fails late and says nothing about why.
+      - name: Keep the jar the tests ran against
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-jar
+          path: target/*.jar
+          retention-days: 1
+          if-no-files-found: error

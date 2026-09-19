@@ -1,4 +1,6 @@
-name: ci-cd
+# The entry point. Holds the deployment, which needs the jar the tests ran
+# against, and calls one workflow per scanning category.
+name: CI/CD
 
 on:
   pull_request:
@@ -6,8 +8,6 @@ on:
   push:
     branches: [main]
   # Triggered by hand, and by the Makefile in the infrastructure repository.
-  # A manual run here can only mean one thing, deploy what is on the branch,
-  # so it takes no input.
   workflow_dispatch:
 
 permissions:
@@ -18,139 +18,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Trivy below reads the dependencies that are already here. This reads what
-  # the pull request adds, which a scan of the current tree cannot tell apart.
-  review:
-    name: dependency-review
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  quality:
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    uses: ./.github/workflows/ci-quality.yml
+
+  secrets:
+    uses: ./.github/workflows/ci-secrets.yml
+
+  sca:
+    # dependency-review posts its findings on the pull request.
     permissions:
       contents: read
       pull-requests: write
-    steps:
-      - uses: actions/checkout@v7
+    uses: ./.github/workflows/ci-sca.yml
 
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
-        with:
-          fail-on-severity: high
-          comment-summary-in-pr: on-failure
-
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      # Full history: Sonar dates an issue from the commit that introduced it,
-      # and a shallow clone leaves it nothing to read, so everything lands in
-      # New Code and the quality gate judges the whole repository as new.
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: maven
-
-      - name: Compile and test
-        run: ./mvnw -B -ntp verify
-
-      # Same job as the tests, because coverage is a file on disk that nothing
-      # would carry to a second job. The plugin version is pinned: the usual
-      # sonar:sonar shorthand resolves to whatever is newest that day.
-      #
-      # Skipped on Dependabot runs: GitHub hands those a separate, empty secret
-      # store, so SONAR_TOKEN arrives blank and the scanner stops on "Not
-      # authorized", failing a required check on a branch that only bumps a
-      # dependency. The tests above still run, and the code is scanned for real
-      # once the branch lands on develop or main.
-      - name: Analyse with SonarCloud
-        if: github.actor != 'dependabot[bot]'
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: >
-          ./mvnw -B -ntp
-          org.sonarsource.scanner.maven:sonar-maven-plugin:5.1.0.4751:sonar
-
-      # Handed to the deploy job rather than rebuilt there: deploying an artifact
-      # other than the one that passed the tests would make the tests pointless.
-      #
-      # This guard has to allow exactly what the deploy job allows. Leave the
-      # manual run out of it and the deploy job downloads an artifact that was
-      # never uploaded, which fails late and says nothing about why.
-      - name: Keep the jar the tests ran against
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v7
-        with:
-          name: backend-jar
-          path: target/*.jar
-          retention-days: 1
-          if-no-files-found: error
-
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      # Full history, because the secret scan below reads commits rather than
-      # files: something committed and removed the next day is still readable
-      # forever in a public repository.
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Scan the history for secrets
-        env:
-          GITLEAKS_VERSION: 8.30.1
-        run: |
-          curl -sSfL --proto '=https' --proto-redir '=https' "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | tar -xz gitleaks
-          ./gitleaks git . --no-banner --redact --config .gitleaks.toml
-
-      - name: Scan the dependencies
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          severity: HIGH,CRITICAL
-          exit-code: "1"
-
-      - name: Scan for secrets
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: secret
-          severity: MEDIUM,HIGH,CRITICAL
-          exit-code: "1"
-
-  codeql:
-    runs-on: ubuntu-latest
+  sast:
+    # A called workflow cannot hold more than its caller grants it.
     permissions:
       contents: read
       security-events: write
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: maven
-
-      - uses: github/codeql-action/init@v4
-        with:
-          languages: java-kotlin
-
-      - uses: github/codeql-action/autobuild@v4
-
-      - uses: github/codeql-action/analyze@v4
+    uses: ./.github/workflows/ci-sast.yml
 
   deploy:
-    needs: [verify, security, codeql]
-    outputs:
-      url: ${{ steps.health.outputs.url }}
+    needs: [quality, secrets, sca, sast]
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # Without this the job inherits the six hour default. The health check below
+    # already gives up after five minutes, so anything past thirty is a runner
+    # that will not come back, and it holds the ci-cd concurrency group for the
+    # ref while it waits.
+    timeout-minutes: 30
     environment: nonprod
+    outputs:
+      url: ${{ steps.health.outputs.url }}
     permissions:
       contents: read
       id-token: write
@@ -257,3 +158,10 @@ jobs:
           fail_action: false
           allow_issue_writing: false
           artifact_name: zap-baseline-report
+
+      - name: Put the findings on the summary page
+        if: always()
+        env:
+          TARGET: ${{ needs.deploy.outputs.url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/workflows/security/summarise-the-zap-report.sh
