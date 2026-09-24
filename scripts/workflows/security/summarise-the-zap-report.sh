@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# ZAP's findings on the run's summary page, because the raw report is an
-# artifact nobody downloads.
 
 set -euo pipefail
 
@@ -13,7 +11,6 @@ readonly REPORT="${REPORT:-report_md.md}"
 readonly TARGET="${TARGET:?}"
 readonly RUN_URL="${RUN_URL:-}"
 
-# ZAP counts its own alerts in a table. Reading the cell beats recounting them.
 alerts() {
     awk -F'|' -v level="$1" '$2 ~ "^ *"level" *$" { gsub(/ /, "", $3); print $3; exit }' "$REPORT"
 }

@@ -1,8 +1,3 @@
-# DAST. The API as it runs, from outside. Called from cd-deploy.yml once the
-# deployment has answered.
-#
-# A backend has no page to render, so what this reads is the response headers
-# and what the error pages give away.
 name: CD - DAST
 
 on:
@@ -18,11 +13,6 @@ on:
         description: The deployed API to scan.
         required: true
         type: string
-  # Once a day, 11:47 UTC. Every deployment is already scanned by cd-deploy.yml,
-  # so this only catches what changes without one: new ZAP rules, headers served
-  # differently. Midday because the environment is torn down between sessions
-  # and a night scan would find nothing. Off the hour on purpose: the start of
-  # every hour is when GitHub drops scheduled runs under load.
   schedule:
     - cron: '47 11 * * *'
 
@@ -30,9 +20,6 @@ permissions:
   contents: read
 
 jobs:
-  # Only a scheduled run needs this: a caller or a person always hands the url
-  # in. No environment:, like the target job in cd-deploy.yml. It only reads,
-  # and on nonprod a scan would wait for a reviewer every day.
   target:
     if: github.event_name == 'schedule'
     name: Find the API
@@ -59,9 +46,6 @@ jobs:
 
   dast:
     needs: target
-    # target is skipped whenever the url was handed in, and a skipped need skips
-    # this job too unless the condition says otherwise. An empty url means the
-    # environment is not built: nothing to scan, which is not a failure.
     if: >-
       !cancelled() &&
       (needs.target.result == 'skipped' || needs.target.outputs.url != '')

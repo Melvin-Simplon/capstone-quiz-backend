@@ -1,11 +1,3 @@
-# Everything that says whether the module builds and holds together: compile,
-# tests, coverage and the SonarCloud analysis, in one job because coverage is a
-# file on disk that nothing would carry to a second one.
-#
-# Runs on every pull request, where it gates the merge. cd-deploy.yml calls it
-# too, on main and on a dispatch: the deployment ships the jar these tests ran
-# against, and on main the analysis keeps the reference pull requests are
-# compared against.
 name: CI - Build module
 
 on:
@@ -15,14 +7,11 @@ on:
     secrets:
       SONAR_TOKEN:
         required: true
-  # Runnable on its own while working on it, without opening a pull request.
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A literal group: github.workflow names the caller when this file is called,
-# and sharing the caller's group would leave each run waiting on the other.
 concurrency:
   group: ci-build-${{ github.ref }}
   cancel-in-progress: false
@@ -33,9 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # Full history: Sonar dates an issue from the commit that introduced it,
-      # and a shallow clone leaves it nothing to read, so everything lands in
-      # New Code and the quality gate judges the whole repository as new.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -49,15 +35,6 @@ jobs:
       - name: Compile and test
         run: ./mvnw -B -ntp verify
 
-      # Same job as the tests, because coverage is a file on disk that nothing
-      # would carry to a second job. The plugin version is pinned: the usual
-      # sonar:sonar shorthand resolves to whatever is newest that day.
-      #
-      # Skipped on Dependabot runs: GitHub hands those a separate, empty secret
-      # store, so SONAR_TOKEN arrives blank and the scanner stops on "Not
-      # authorized", failing a required check on a branch that only bumps a
-      # dependency. The tests above still run, and the code is scanned for real
-      # once the branch lands on develop or main.
       - name: Analyse with SonarCloud
         if: github.actor != 'dependabot[bot]'
         env:
@@ -72,13 +49,6 @@ jobs:
           PULL_REQUEST: ${{ github.event.number }}
         run: scripts/workflows/ci/summarise-the-quality-report.sh
 
-      # Handed to the deploy job in cd-deploy.yml rather than rebuilt there:
-      # deploying an artifact other than the one that passed the tests would
-      # make the tests pointless.
-      #
-      # This guard has to allow exactly what the deploy job allows. Leave the
-      # manual run out of it and the deploy job downloads an artifact that was
-      # never uploaded, which fails late and says nothing about why.
       - name: Keep the jar the tests ran against
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v7

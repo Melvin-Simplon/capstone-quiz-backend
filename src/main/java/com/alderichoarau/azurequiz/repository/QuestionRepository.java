@@ -8,7 +8,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface QuestionRepository extends JpaRepository<Question, UUID> {
-
     long countByModuleIdAndActiveTrue(UUID moduleId);
 
     @Query(

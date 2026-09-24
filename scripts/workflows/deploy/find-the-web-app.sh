@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# Answers whether there is a web app to deploy to, and where it is.
-#
-# The environment is built and torn down between sessions, so finding nothing is
-# a normal state here: there is nothing to deploy, which is not the same as a
-# deployment that did not work. That case reports skipping and hands the
-# decision back through the found output, rather than failing the run.
-#
-# An app that exists but is stopped is the other case, and that one is an error:
-# the jar would upload, the tracker would wait for a site that never starts, and
-# the job would die on a timeout that names nothing.
-#
-# Asked for by tag rather than by name, so that renaming or rebuilding the
-# infrastructure leaves this untouched.
-#
-# Writes to GITHUB_OUTPUT: found, and when found is true, name and group.
 
 set -euo pipefail
 
@@ -28,9 +13,6 @@ emit() {
     printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"
 }
 
-# One query per value: asking for a pair returns a JSON array, which tsv prints
-# one element per line rather than as two columns, so reading it into two
-# variables silently leaves the second one empty.
 query_one() {
     az webapp list --query "${TAGGED}.$1 | [0]" -o tsv
 }

@@ -45,7 +45,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional
 public class QuizSessionService {
-
     private static final int DEFAULT_EXAM_QUESTION_COUNT = 40;
 
     private final CertificationRepository certificationRepository;

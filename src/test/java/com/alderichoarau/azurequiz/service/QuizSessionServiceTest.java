@@ -34,7 +34,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 @ExtendWith(MockitoExtension.class)
 class QuizSessionServiceTest {
-
     @Mock private CertificationRepository certificationRepository;
     @Mock private QuizModuleRepository moduleRepository;
     @Mock private QuestionRepository questionRepository;

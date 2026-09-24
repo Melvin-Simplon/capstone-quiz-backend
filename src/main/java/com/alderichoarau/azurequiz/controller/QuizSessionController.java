@@ -26,7 +26,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/quiz-sessions")
 @RequiredArgsConstructor
 public class QuizSessionController {
-
     private final QuizSessionService quizSessionService;
     private final QuizResultExportService quizResultExportService;
 
@@ -49,10 +48,6 @@ public class QuizSessionController {
         return quizSessionService.getResult(sessionId);
     }
 
-    // Downloads the JSON blob written by QuizResultExportService when getResult() above was last
-    // called for this session (Storage Account, see storage.tf in the infra repo) -- streamed
-    // through the backend's own managed identity rather than a SAS, consistent with the account
-    // having no access keys (shared_access_key_enabled = false).
     @GetMapping("/{sessionId}/result/export")
     public ResponseEntity<byte[]> exportResult(@PathVariable UUID sessionId) {
         byte[] json = quizResultExportService.download(sessionId);

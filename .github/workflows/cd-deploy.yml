@@ -1,13 +1,3 @@
-# Ships what lands on main: the jar the tests ran against, then a DAST scan of
-# the API it now serves.
-#
-# The build and security checks already gated the merge on the pull request.
-# main runs the build again because the deployment needs its jar, and CodeQL to
-# keep the reference the next pull requests are compared against.
-#
-# A dispatch, which is how the Makefile in the infrastructure repository gets
-# here, still builds the jar but skips CodeQL: it asks for a deployment of what
-# main already holds.
 name: CD - Deploy
 
 on:
@@ -24,17 +14,12 @@ concurrency:
 
 jobs:
   build:
-    # secrets: inherit would hand the called workflow every secret this
-    # repository holds. It needs one.
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     uses: ./.github/workflows/ci-build.yml
 
   security:
     if: github.event_name == 'push'
-    # A called workflow cannot hold more than its caller grants. CodeQL writes
-    # to the Security tab; pull-requests is declared by dependency-review, which
-    # does not run here but is checked against this grant all the same.
     permissions:
       contents: read
       security-events: write
@@ -43,19 +28,6 @@ jobs:
     with:
       reference_only: true
 
-  # Whether there is anything to deploy to, asked before the deployment rather
-  # than inside it. The environment is built and torn down between sessions, so
-  # an absent one is a normal state: there is nothing to deploy, which is not a
-  # deployment that failed. Kept in its own job so that answering no leaves
-  # deploy skipped rather than red, and so the reviewer below is only ever asked
-  # about a deployment that can actually happen.
-  #
-  # No environment: here on purpose. nonprod carries the approval gate, and the
-  # Azure variables are repository level, so this job reads them without it. The
-  # federated credential for refs/heads/main covers the sign in.
-  #
-  # security is skipped on a dispatch, and a skipped need skips this job too
-  # unless the condition says otherwise. A failed one still stops it.
   target:
     needs: [build, security]
     if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
@@ -84,16 +56,8 @@ jobs:
 
   deploy:
     needs: target
-    # Skipped, not failed, when the environment is not built. The status
-    # function keeps a skipped security job, on a dispatch, from skipping this
-    # one too: without it GitHub adds success(), false once anything up the
-    # chain was skipped.
     if: ${{ !cancelled() && needs.target.outputs.found == 'true' }}
     runs-on: ubuntu-latest
-    # Without this the job inherits the six hour default. The health check below
-    # already gives up after five minutes, so anything past thirty is a runner
-    # that will not come back, and it holds the ci-cd concurrency group for the
-    # ref while it waits.
     timeout-minutes: 30
     environment: nonprod
     outputs:
@@ -106,9 +70,6 @@ jobs:
         with:
           name: backend-jar
 
-      # No client secret: the workflow proves which repository, branch and
-      # environment it runs from, and Azure hands back a token that dies with the
-      # job.
       - name: Sign in to Azure
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
@@ -125,9 +86,6 @@ jobs:
             --src-path "$jar" \
             --type jar
 
-      # A deployment that returns success while the application fails to start is
-      # the failure this catches. The window is generous because a cold start
-      # replays the Flyway migrations.
       - name: Wait for the application to answer
         id: health
         run: |
@@ -155,16 +113,9 @@ jobs:
           sleep 20
           exit 1
 
-  # Separate job: a failure here means the deployment is wrong, not the upload.
   dast:
     needs: deploy
-    # build and security are skipped on a dispatch, and without a status
-    # function GitHub adds success(), which is false once anything up the chain
-    # was skipped: the scan would be skipped with them.
     if: ${{ !cancelled() && needs.deploy.result == 'success' }}
-    # A called workflow cannot hold more than its caller grants, and GitHub
-    # checks every job in it before starting the run, skipped ones included.
-    # id-token is for its target job, which only runs on the schedule.
     permissions:
       contents: read
       id-token: write

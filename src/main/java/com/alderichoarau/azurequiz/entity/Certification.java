@@ -14,7 +14,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-/** A Microsoft certification exam track, e.g. AZ-900, AZ-104. Modules and questions belong to one. */
 @Entity
 @Table(name = "certification")
 @Getter
@@ -24,7 +23,6 @@ import lombok.Setter;
 @Builder
 @EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Certification {
-
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @EqualsAndHashCode.Include

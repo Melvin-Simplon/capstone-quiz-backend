@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/certifications")
 @RequiredArgsConstructor
 public class CertificationController {
-
     private final CertificationService certificationService;
 
     @GetMapping

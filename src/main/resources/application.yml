@@ -11,10 +11,6 @@ spring:
     type: redis
   data:
     redis:
-      # Locally: docker-compose's "redis" service, plaintext, no password.
-      # In prod: REDIS_HOSTNAME/PORT/PASSWORD/SSL_ENABLED come from Terraform
-      # (Azure Managed Redis, see app-service.tf / redis.tf), TLS and a
-      # key are mandatory there, both off by default here for local dev.
       host: ${REDIS_HOSTNAME:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
@@ -23,22 +19,12 @@ spring:
 management:
   endpoints:
     web:
-      # The index at /actuator lists which endpoints exist. Only health is
-      # exposed, so the list is short, but it is still a free map.
       discovery:
         enabled: false
-      # Spring Boot's default is already "health" only, but explicit here since this is exactly
-      # what Azure App Service pings (site_config.health_check_path, app-service.tf) and what
-      # backs its auto-restart-on-failure behaviour, worth being able to see at a glance rather
-      # than relying on the framework default. Not behind ApiKeyFilter (scoped to /api/** only,
-      # ApiKeyFilter.java) since App Service's health prober can't send the API key header.
       exposure:
         include: health
 
 app:
-  # Caps how many API calls one address may make per minute. The application has
-  # no accounts and its key ships inside the frontend bundle, so this is what
-  # stands between a loop on session creation and a full database.
   rate-limit:
     enabled: true
     requests-per-minute: 120
@@ -46,9 +32,6 @@ app:
   cors:
     allowed-origins: http://localhost:4200
   security:
-    # Empty by default (local dev): the filter lets every request through.
-    # In prod, Azure App Service injects BACKEND_API_KEY (from Key Vault via
-    # Terraform, see app-service.tf) and the filter starts enforcing it.
     api-key: ${BACKEND_API_KEY:}
   storage:
     container-name: ${STORAGE_CONTAINER_NAME:quiz-results-local}
@@ -58,9 +41,6 @@ logging:
     com.alderichoarau.azurequiz: DEBUG
 
 ---
-# Spring's implicit "default" profile: active whenever no other profile is set. Locally that's
-# always the case; in prod, SPRING_PROFILES_ACTIVE=prod (app-service.tf) keeps this document
-# from loading there, so the two Azurite/localhost-only settings below never leak into prod.
 spring:
   config:
     activate:
@@ -73,22 +53,9 @@ spring:
     azure:
       storage:
         blob:
-          # Well-known, publicly documented Azurite (Microsoft's local Azure Storage emulator,
-          # docker-compose.yml) test credentials -- not a real secret, safe to commit.
           connection-string: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
 
 ---
-# Only active in prod (SPRING_PROFILES_ACTIVE=prod, app-service.tf). Both settings below are
-# scoped here rather than declared unconditionally at the top with an empty local default -- an
-# *empty* account-name property is still a *present* property, and Spring Cloud Azure's storage
-# autoconfiguration picks account-name-based endpoint construction over connection-string as soon
-# as account-name exists at all, even blank (produces an endpoint literally missing its account
-# name: "https://.blob.core.windows.net", a real error hit while wiring this up). Same reasoning
-# already applied to managed-identity-enabled: setting it locally made Spring Cloud Azure try to
-# resolve credentials via Azure's Instance Metadata Service (169.254.169.254, only reachable from
-# inside Azure), adding ~10s of connection-timeout retries to every local startup even though
-# STORAGE_CONNECTION_STRING (Azurite) was already set. Keeping both entirely absent locally (not
-# just empty) sidesteps both issues.
 spring:
   config:
     activate:
@@ -96,18 +63,13 @@ spring:
   cloud:
     azure:
       credential:
-        # This Web App's SystemAssigned identity, already granted Storage Blob Data Contributor
-        # scoped to STORAGE_CONTAINER_NAME (see storage.tf in the infra repo).
         managed-identity-enabled: true
       storage:
         blob:
           account-name: ${STORAGE_ACCOUNT_NAME}
 
-# Swagger lives outside /api/**, so ApiKeyFilter never covered it, and it served
-# the full contract to anyone who asked. Useful locally, a free map in Azure.
 springdoc:
   api-docs:
     enabled: false
   swagger-ui:
     enabled: false
-

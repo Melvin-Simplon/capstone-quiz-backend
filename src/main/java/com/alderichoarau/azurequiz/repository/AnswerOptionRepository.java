@@ -6,7 +6,6 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface AnswerOptionRepository extends JpaRepository<AnswerOption, UUID> {
-
     List<AnswerOption> findByQuestionIdOrderByPositionAsc(UUID questionId);
 
     List<AnswerOption> findByQuestionIdInOrderByPositionAsc(List<UUID> questionIds);

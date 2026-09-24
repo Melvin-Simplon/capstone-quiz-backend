@@ -7,22 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-/**
- * Counts requests per key over a fixed window, and says whether one more is allowed.
- *
- * <p>Kept apart from the filter that uses it so the counting can be tested without a servlet, and
- * without waiting for real time to pass.
- *
- * <p>A fixed window rather than a sliding one: it lets through at most twice the limit across a
- * window boundary, which is the known cost of the simpler algorithm and is irrelevant against the
- * abuse this defends from, someone looping on a write endpoint.
- */
 public class RequestRateLimiter {
-
-    /**
-     * Above this many tracked keys, expired entries are swept. It bounds the memory a flood of
-     * distinct addresses can cost, which would otherwise be its own denial of service.
-     */
     private static final int SWEEP_THRESHOLD = 10_000;
 
     private final int maxRequests;
@@ -40,7 +25,6 @@ public class RequestRateLimiter {
         this(maxRequests, window, Instant::now);
     }
 
-    /** Returns false once the key has used up its allowance for the current window. */
     public boolean tryAcquire(String key) {
         Instant now = clock.get();
 
@@ -52,7 +36,6 @@ public class RequestRateLimiter {
         return counter.tryAcquire(now, window, maxRequests);
     }
 
-    /** Seconds a caller should wait before its allowance is refilled. */
     public long retryAfterSeconds(String key) {
         Counter counter = counters.get(key);
         if (counter == null) {
@@ -67,7 +50,6 @@ public class RequestRateLimiter {
     }
 
     private static final class Counter {
-
         private volatile Instant startedAt;
         private final AtomicInteger count = new AtomicInteger();
 

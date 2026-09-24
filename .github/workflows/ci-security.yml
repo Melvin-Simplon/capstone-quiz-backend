@@ -1,13 +1,3 @@
-# Everything that looks for a weakness before anything is deployed: known CVEs
-# in the dependencies (SCA), in the code (SAST), and secrets committed by
-# mistake. DAST needs a running API, so it lives in cd-dast.yml.
-#
-# When each part runs:
-#
-#   pull request   all of it, where it gates the merge
-#   main           CodeQL only, called by cd-deploy.yml with reference_only:
-#                  code scanning compares each pull request with main
-#   every morning  SCA only: a CVE is published without the code changing
 name: CI - Security scan
 
 on:
@@ -21,28 +11,22 @@ on:
         description: Run only the analysis main keeps as a reference for pull requests.
         type: boolean
         default: false
-  # Runnable on its own while working on it, without opening a pull request.
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A literal group: github.workflow names the caller when this file is called,
-# and sharing the caller's group would leave each run waiting on the other.
 concurrency:
   group: ci-security-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # In the diff and in the history.
   secrets:
     name: Secrets (gitleaks and Trivy)
     if: ${{ !inputs.reference_only && github.event_name != 'schedule' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # Full history: something committed and removed the next day is still
-      # readable forever in a public repository.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -70,9 +54,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      # Trivy reads the dependency manifests from the working tree. Without a
-      # checkout it scans an empty runner, finds nothing, and reports success:
-      # the check stays green while guarding nothing.
       - uses: actions/checkout@v7
 
       - name: Scan the dependencies
@@ -83,10 +64,6 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
 
-  # The SCA job answers "do the dependencies we have carry known CVEs". This
-  # answers "does this pull request add one", which a scan of the current
-  # lockfile cannot: a vulnerable package already present makes both look the
-  # same.
   review:
     name: SCA (dependency-review)
     if: github.event_name == 'pull_request'

@@ -12,23 +12,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-/**
- * Simple, concrete use of the Storage Account (java-uploads container, see storage.tf /
- * app-service.tf in the infra repo): each finished quiz session's result gets exported as a
- * small JSON blob, downloadable later through {@link #download(UUID)}.
- */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class QuizResultExportService {
-
     private final BlobContainerClient resultsContainerClient;
     private final ObjectMapper objectMapper;
 
-    /**
-     * Fire-and-forget: a Storage outage must never break the quiz flow for the student.
-     * Postgres remains the source of truth for results; this export is a convenience on top.
-     */
     public void export(QuizResultDto result) {
         String blobName = blobName(result.sessionId());
         try {

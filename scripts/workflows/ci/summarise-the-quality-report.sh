@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tests and coverage on the run's summary page, because the quality job's log is
-# long and these numbers sit in the middle of it.
 
 set -euo pipefail
 

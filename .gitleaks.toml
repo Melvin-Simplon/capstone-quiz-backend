@@ -1,5 +1,3 @@
-# Extends the default rules rather than replacing them: everything gitleaks
-# knows about stays on, and only the entry below is waived.
 [extend]
 useDefault = true
 

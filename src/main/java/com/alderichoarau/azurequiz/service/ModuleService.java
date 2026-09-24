@@ -19,14 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ModuleService {
-
     private final CertificationRepository certificationRepository;
     private final QuizModuleRepository moduleRepository;
     private final QuestionRepository questionRepository;
 
-    // Same Redis cache as CertificationService — modules/question counts per certification
-    // change rarely but this is called on every certification page visit. Keyed per
-    // certificationId so each certification's module list caches independently.
     @Cacheable(value = "modules", key = "#certificationId")
     public List<ModuleSummaryDto> getModulesByCertification(UUID certificationId) {
         log.debug("Fetching modules for certification {}", certificationId);

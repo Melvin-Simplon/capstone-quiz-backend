@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/certifications/{certificationId}/modules")
 @RequiredArgsConstructor
 public class ModuleController {
-
     private final ModuleService moduleService;
 
     @GetMapping

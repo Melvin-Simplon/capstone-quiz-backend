@@ -16,15 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class CertificationService {
-
     private final CertificationRepository certificationRepository;
     private final QuizModuleRepository moduleRepository;
 
-    // Redis-backed cache (see AzureQuizBackendApplication's @EnableCaching and
-    // application.yml's spring.data.redis config): the certification list changes rarely
-    // (a new certification added every so often) but is read on every app load, making it
-    // the simplest, highest-value candidate to cache in this app. No explicit eviction —
-    // acceptable for this TP; a real deployment would evict/refresh on certification writes.
     @Cacheable("certifications")
     public List<CertificationSummaryDto> getAllCertifications() {
         log.debug("Fetching all certifications");

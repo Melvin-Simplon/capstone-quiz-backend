@@ -30,10 +30,6 @@ services:
   azurite:
     image: mcr.microsoft.com/azure-storage/azurite
     container_name: azure-quiz-backend-azurite
-    # --skipApiVersionCheck: Azurite ships a fixed set of supported Storage REST API versions and
-    # rejects requests from newer SDK clients with "API version ... is not supported by Azurite"
-    # otherwise (hit while wiring this up, with the Azure SDK for Java's default x-ms-version).
-    # Fine for local dev/testing; Microsoft's own documented workaround.
     command: "azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --skipApiVersionCheck"
     ports:
       - "10000:10000"

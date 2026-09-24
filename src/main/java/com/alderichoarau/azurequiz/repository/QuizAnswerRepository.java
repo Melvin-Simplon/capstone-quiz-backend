@@ -7,7 +7,6 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface QuizAnswerRepository extends JpaRepository<QuizAnswer, UUID> {
-
     Optional<QuizAnswer> findBySessionIdAndQuestionId(UUID sessionId, UUID questionId);
 
     List<QuizAnswer> findBySessionId(UUID sessionId);
