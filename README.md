@@ -1,6 +1,8 @@
 # Azure Quiz Backend
 
-[![ci-cd](https://github.com/WhiteMuush/simplon-quiz-backend-bilan/actions/workflows/ci-cd.yml/badge.svg?branch=main)](https://github.com/WhiteMuush/simplon-quiz-backend-bilan/actions/workflows/ci-cd.yml)
+[![CI - Build module](https://github.com/Melvin-Simplon/capstone-quiz-backend/actions/workflows/ci-build.yml/badge.svg?branch=main)](https://github.com/Melvin-Simplon/capstone-quiz-backend/actions/workflows/ci-build.yml)
+[![CI - Security scan](https://github.com/Melvin-Simplon/capstone-quiz-backend/actions/workflows/ci-security.yml/badge.svg?branch=main)](https://github.com/Melvin-Simplon/capstone-quiz-backend/actions/workflows/ci-security.yml)
+[![CD - Deploy](https://github.com/Melvin-Simplon/capstone-quiz-backend/actions/workflows/cd-deploy.yml/badge.svg?branch=main)](https://github.com/Melvin-Simplon/capstone-quiz-backend/actions/workflows/cd-deploy.yml)
 [![Java](https://img.shields.io/badge/Java-21-007396?logo=openjdk&logoColor=white)](pom.xml)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-6DB33F?logo=springboot&logoColor=white)](pom.xml)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](src/main/resources/db/migration)
@@ -138,8 +140,11 @@ them exists in this repository.
 
 ## Deployment
 
-Merging into `main` runs [`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml): tests,
-dependency and secret scanning, CodeQL, then the deployment, which waits on all three.
+Every pull request runs [`ci-build.yml`](.github/workflows/ci-build.yml) (compile, tests,
+SonarCloud) and [`ci-security.yml`](.github/workflows/ci-security.yml) (Trivy, dependency-review,
+CodeQL, secret scanning). Merging into `main` runs [`cd-deploy.yml`](.github/workflows/cd-deploy.yml):
+the build again for its jar, CodeQL for the reference, then the deployment, then a DAST scan of the
+API. [`cd-dast.yml`](.github/workflows/cd-dast.yml) also scans the running API once a day.
 
 Two properties worth stating:
 
