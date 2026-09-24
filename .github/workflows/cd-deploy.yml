@@ -84,9 +84,11 @@ jobs:
 
   deploy:
     needs: target
-    # Skipped, not failed, when the environment is not built. target is skipped
-    # on a pull request too, which leaves this output empty and skips this job.
-    if: needs.target.outputs.found == 'true'
+    # Skipped, not failed, when the environment is not built. The status
+    # function keeps a skipped security job, on a dispatch, from skipping this
+    # one too: without it GitHub adds success(), false once anything up the
+    # chain was skipped.
+    if: ${{ !cancelled() && needs.target.outputs.found == 'true' }}
     runs-on: ubuntu-latest
     # Without this the job inherits the six hour default. The health check below
     # already gives up after five minutes, so anything past thirty is a runner
@@ -156,6 +158,10 @@ jobs:
   # Separate job: a failure here means the deployment is wrong, not the upload.
   dast:
     needs: deploy
+    # build and security are skipped on a dispatch, and without a status
+    # function GitHub adds success(), which is false once anything up the chain
+    # was skipped: the scan would be skipped with them.
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
     # A called workflow cannot hold more than its caller grants, and GitHub
     # checks every job in it before starting the run, skipped ones included.
     # id-token is for its target job, which only runs on the schedule.
