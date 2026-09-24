@@ -1,0 +1,89 @@
+# DAST. The API as it runs, from outside. Called from cd-deploy.yml once the
+# deployment has answered.
+#
+# A backend has no page to render, so what this reads is the response headers
+# and what the error pages give away.
+name: CD - DAST
+
+on:
+  workflow_call:
+    inputs:
+      api_url:
+        description: The deployed API to scan.
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: The deployed API to scan.
+        required: true
+        type: string
+  # Once a day, 11:47 UTC. Every deployment is already scanned by cd-deploy.yml,
+  # so this only catches what changes without one: new ZAP rules, headers served
+  # differently. Midday because the environment is torn down between sessions
+  # and a night scan would find nothing. Off the hour on purpose: the start of
+  # every hour is when GitHub drops scheduled runs under load.
+  schedule:
+    - cron: '47 11 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  # Only a scheduled run needs this: a caller or a person always hands the url
+  # in. No environment:, like the target job in cd-deploy.yml. It only reads,
+  # and on nonprod a scan would wait for a reviewer every day.
+  target:
+    if: github.event_name == 'schedule'
+    name: Find the API
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      url: ${{ steps.find.outputs.url }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sign in to Azure
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Find the deployed API
+        id: find
+        run: scripts/workflows/security/find-the-api-to-scan.sh
+
+  dast:
+    needs: target
+    # target is skipped whenever the url was handed in, and a skipped need skips
+    # this job too unless the condition says otherwise. An empty url means the
+    # environment is not built: nothing to scan, which is not a failure.
+    if: >-
+      !cancelled() &&
+      (needs.target.result == 'skipped' || needs.target.outputs.url != '')
+    name: OWASP ZAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      API_URL: ${{ inputs.api_url || needs.target.outputs.url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Scan the running API
+        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
+        with:
+          target: ${{ env.API_URL }}
+          fail_action: false
+          allow_issue_writing: false
+          artifact_name: zap-baseline-report
+
+      - name: Put the findings on the summary page
+        if: always()
+        env:
+          TARGET: ${{ env.API_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/workflows/security/summarise-the-zap-report.sh
