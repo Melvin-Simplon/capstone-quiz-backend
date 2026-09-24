@@ -1,0 +1,129 @@
+# Everything that looks for a weakness before anything is deployed: known CVEs
+# in the dependencies (SCA), in the code (SAST), and secrets committed by
+# mistake. DAST needs a running API, so it lives in cd-dast.yml.
+#
+# When each part runs:
+#
+#   pull request   all of it, where it gates the merge
+#   main           CodeQL only, called by cd-deploy.yml with reference_only:
+#                  code scanning compares each pull request with main
+#   every morning  SCA only: a CVE is published without the code changing
+name: CI - Security scan
+
+on:
+  pull_request:
+    branches: [develop, main]
+  schedule:
+    - cron: '43 5 * * *'
+  workflow_call:
+    inputs:
+      reference_only:
+        description: Run only the analysis main keeps as a reference for pull requests.
+        type: boolean
+        default: false
+  # Runnable on its own while working on it, without opening a pull request.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A literal group: github.workflow names the caller when this file is called,
+# and sharing the caller's group would leave each run waiting on the other.
+concurrency:
+  group: ci-security-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # In the diff and in the history.
+  secrets:
+    name: Secrets (gitleaks and Trivy)
+    if: ${{ !inputs.reference_only && github.event_name != 'schedule' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Full history: something committed and removed the next day is still
+      # readable forever in a public repository.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Scan the history for secrets
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          curl -sSfL --proto '=https' --proto-redir '=https' "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks git . --no-banner --redact --config .gitleaks.toml
+
+      - name: Scan for secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: secret
+          severity: MEDIUM,HIGH,CRITICAL
+          exit-code: "1"
+
+  sca:
+    name: SCA (Trivy)
+    if: ${{ !inputs.reference_only }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Trivy reads the dependency manifests from the working tree. Without a
+      # checkout it scans an empty runner, finds nothing, and reports success:
+      # the check stays green while guarding nothing.
+      - uses: actions/checkout@v7
+
+      - name: Scan the dependencies
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+  # The SCA job answers "do the dependencies we have carry known CVEs". This
+  # answers "does this pull request add one", which a scan of the current
+  # lockfile cannot: a vulnerable package already present makes both look the
+  # same.
+  review:
+    name: SCA (dependency-review)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+
+  sast:
+    name: SAST (CodeQL)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+
+      - uses: github/codeql-action/autobuild@v4
+
+      - uses: github/codeql-action/analyze@v4

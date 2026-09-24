@@ -1,44 +1,47 @@
-# The entry point. Holds the deployment, which needs the jar the tests ran
-# against, and calls one workflow per scanning category.
-name: CI/CD
+# Ships what lands on main: the jar the tests ran against, then a DAST scan of
+# the API it now serves.
+#
+# The build and security checks already gated the merge on the pull request.
+# main runs the build again because the deployment needs its jar, and CodeQL to
+# keep the reference the next pull requests are compared against.
+#
+# A dispatch, which is how the Makefile in the infrastructure repository gets
+# here, still builds the jar but skips CodeQL: it asks for a deployment of what
+# main already holds.
+name: CD - Deploy
 
 on:
-  pull_request:
-    branches: [develop, main]
   push:
     branches: [main]
-  # Triggered by hand, and by the Makefile in the infrastructure repository.
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-cd-${{ github.ref }}
+  group: cd-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  quality:
+  build:
+    # secrets: inherit would hand the called workflow every secret this
+    # repository holds. It needs one.
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-    uses: ./.github/workflows/ci-quality.yml
+    uses: ./.github/workflows/ci-build.yml
 
-  secrets:
-    uses: ./.github/workflows/ci-secrets.yml
-
-  sca:
-    # dependency-review posts its findings on the pull request.
-    permissions:
-      contents: read
-      pull-requests: write
-    uses: ./.github/workflows/ci-sca.yml
-
-  sast:
-    # A called workflow cannot hold more than its caller grants it.
+  security:
+    if: github.event_name == 'push'
+    # A called workflow cannot hold more than its caller grants. CodeQL writes
+    # to the Security tab; pull-requests is declared by dependency-review, which
+    # does not run here but is checked against this grant all the same.
     permissions:
       contents: read
       security-events: write
-    uses: ./.github/workflows/ci-sast.yml
+      pull-requests: write
+    uses: ./.github/workflows/ci-security.yml
+    with:
+      reference_only: true
 
   # Whether there is anything to deploy to, asked before the deployment rather
   # than inside it. The environment is built and torn down between sessions, so
@@ -50,9 +53,12 @@ jobs:
   # No environment: here on purpose. nonprod carries the approval gate, and the
   # Azure variables are repository level, so this job reads them without it. The
   # federated credential for refs/heads/main covers the sign in.
+  #
+  # security is skipped on a dispatch, and a skipped need skips this job too
+  # unless the condition says otherwise. A failed one still stops it.
   target:
-    needs: [quality, secrets, sca, sast]
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [build, security]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -147,27 +153,9 @@ jobs:
           sleep 20
           exit 1
 
-  # The API as it runs, from outside. A backend has no page to render, so what
-  # this reads is the response headers and what the error pages give away.
+  # Separate job: a failure here means the deployment is wrong, not the upload.
   dast:
-    name: OWASP ZAP
     needs: deploy
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Scan the running API
-        uses: zaproxy/action-baseline@de8ad967d3548d44ef623df22cf95c3b0baf8b25 # v0.15.0
-        with:
-          target: ${{ needs.deploy.outputs.url }}
-          fail_action: false
-          allow_issue_writing: false
-          artifact_name: zap-baseline-report
-
-      - name: Put the findings on the summary page
-        if: always()
-        env:
-          TARGET: ${{ needs.deploy.outputs.url }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: scripts/workflows/security/summarise-the-zap-report.sh
+    uses: ./.github/workflows/cd-dast.yml
+    with:
+      api_url: ${{ needs.deploy.outputs.url }}

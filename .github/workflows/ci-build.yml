@@ -1,22 +1,35 @@
-# Compile, test, and analyse with SonarCloud.
+# Everything that says whether the module builds and holds together: compile,
+# tests, coverage and the SonarCloud analysis, in one job because coverage is a
+# file on disk that nothing would carry to a second one.
 #
-# Called from ci-cd.yml. The tests run here rather than in a job of their own:
-# coverage is a file on disk, and nothing carries it between two jobs.
-name: Quality
+# Runs on every pull request, where it gates the merge. cd-deploy.yml calls it
+# too, on main and on a dispatch: the deployment ships the jar these tests ran
+# against, and on main the analysis keeps the reference pull requests are
+# compared against.
+name: CI - Build module
 
 on:
+  pull_request:
+    branches: [develop, main]
   workflow_call:
     secrets:
       SONAR_TOKEN:
         required: true
+  # Runnable on its own while working on it, without opening a pull request.
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# A literal group: github.workflow names the caller when this file is called,
+# and sharing the caller's group would leave each run waiting on the other.
+concurrency:
+  group: ci-build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   quality:
-    name: Maven and SonarCloud
+    name: Build, tests and quality (Maven, SonarCloud)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -59,8 +72,9 @@ jobs:
           PULL_REQUEST: ${{ github.event.number }}
         run: scripts/workflows/ci/summarise-the-quality-report.sh
 
-      # Handed to the deploy job rather than rebuilt there: deploying an artifact
-      # other than the one that passed the tests would make the tests pointless.
+      # Handed to the deploy job in cd-deploy.yml rather than rebuilt there:
+      # deploying an artifact other than the one that passed the tests would
+      # make the tests pointless.
       #
       # This guard has to allow exactly what the deploy job allows. Leave the
       # manual run out of it and the deploy job downloads an artifact that was
